@@ -1,3 +1,162 @@
+## APM Datadog Tracing +Log+Profiling
+### Step1 :
+cd notes_app
+vi app.py (check whether datadog tracing code is ingested_
+```bash
+from notes_app.notes_logic import NotesLogic
+from flask import Flask, request
+
+
+# tracing
+from ddtrace import patch_all
+patch_all()
+
+# logging imports BEFORE calling _setup_logging()
+import os, sys
+import logging
+from pythonjsonlogger import jsonlogger
+
+
+def _setup_logging():
+    root = logging.getLogger()
+    root.setLevel(logging.INFO)
+
+    h = logging.StreamHandler(sys.stdout)
+    fmt = '%(asctime)s %(levelname)s %(name)s %(message)s %(dd.trace_id)s %(dd.span_id)s service=%(service)s env=%(env)s version=%(version)s'
+    h.setFormatter(jsonlogger.JsonFormatter(fmt))
+
+    class _SvcFilter(logging.Filter):
+        def filter(self, record):
+            record.service = os.getenv("DD_SERVICE", "notes-app")
+            record.env = os.getenv("DD_ENV", "dev")
+            record.version = os.getenv("DD_VERSION", "1.0.0")
+            return True
+    h.addFilter(_SvcFilter())
+
+    root.handlers = [h]
+
+    w = logging.getLogger("werkzeug")
+    w.setLevel(logging.INFO)
+    w.handlers = [h]
+    w.propagate = False
+
+
+# ✅ only call after imports are in place
+_setup_logging()
+
+```
+### Step2 : check requirements.txt
+```bash
+flask==2.2.2
+psycopg2-binary==2.9.6
+requests==2.28.1
+ddtrace
+Werkzeug==2.2.2
+python-json-logger
+gunicorn
+```
+### Step 3 : Create the Docker image usign Dockerfile_Datadog
+```bash
+docker build -t sumanth17121988/notes_app:1 -f Dockerfile_Datadog .
+```
+### Step 4 : Run on Kubernetes Deployment (Update the image  sumanth17121988/notes_app:1 in deployment.yaml) and validate the datadog parameter.
+```bash
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: notes
+  labels:
+    app: notes
+    # Unified service tags
+    tags.datadoghq.com/env: dev
+    tags.datadoghq.com/service: notes
+    tags.datadoghq.com/version: "0.1.0"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: notes
+  template:
+    metadata:
+      labels:
+        app: notes
+        tags.datadoghq.com/env: dev
+        tags.datadoghq.com/service: notes
+        tags.datadoghq.com/version: "0.1.0"
+        admission.datadoghq.com/enabled: "true"
+      annotations:
+        # Auto-instrument Python
+        admission.datadoghq.com/python-lib.version: v2.3.1
+        admission.datadoghq.com/config.mode: "hostip"
+        # Log collection mapping
+        ad.datadoghq.com/notes.logs: >-
+          [{"source":"python","service":"notes","auto_multi_line_detection": true}]
+    spec:
+      containers:
+        - name: notes
+          image: sumanth17121988/notes:v2
+          ports:
+            - containerPort: 8080
+          env:
+            # Unified Service Tags (auto-populated from pod labels)
+            - name: DD_ENV
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.labels['tags.datadoghq.com/env']
+            - name: DD_SERVICE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.labels['tags.datadoghq.com/service']
+            - name: DD_VERSION
+              valueFrom:
+                  fieldRef:
+                    fieldPath: metadata.labels['tags.datadoghq.com/version']
+            # Datadog Agent host (uses node's IP)
+            - name: DD_AGENT_HOST
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.hostIP
+            # Enable instrumentation features
+            - name: DD_LOGS_INJECTION
+              value: "true"
+            - name: DD_PROFILING_ENABLED
+              value: "true"
+            - name: DD_RUNTIME_METRICS_ENABLED
+              value: "true"
+            - name: DD_TRACE_SAMPLE_RATE
+              value: "1"
+            - name: DD_TRACE_STARTUP_LOGS
+              value: "true"
+            - name: DD_DYNAMIC_INSTRUMENTATION_ENABLED
+              value: "true"
+            - name: DD_APPSEC_ENABLED
+              value: "true"
+            - name: DD_IAST_ENABLED
+              value: "true"
+            - name: DD_APPSEC_SCA_ENABLED
+              value: "true"
+            - name: DD_TAGS
+              value: "app-name:news,team:devops"
+            - name: DD_TRACE_AGENT_URL
+              value: "http://$(DD_AGENT_HOST):8126"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: notes-service
+  labels:
+    app: notes
+spec:
+  type: LoadBalancer
+  selector:
+    app: notes
+  ports:
+    - protocol: TCP
+      port: 8080        # external port
+      targetPort: 8080 # app listens here
+```
+
+
 # apm-tutorial-python
 
 The notes application and calendar application are both REST API's. The notes application has POST, GET, PUT and DELETE operations for creating, getting, updating and deleting notes. Additionally, the notes application POST /notes method has an additional parameters, add_date, that can be set to 'y' in order to make a call to the calendar application for a random date. This can be used to show distributed tracing across applications.
