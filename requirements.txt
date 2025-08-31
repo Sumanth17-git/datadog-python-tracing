@@ -3,3 +3,5 @@ psycopg2-binary==2.9.6
 requests==2.28.1
 ddtrace
 Werkzeug==2.2.2
+python-json-logger
+gunicorn

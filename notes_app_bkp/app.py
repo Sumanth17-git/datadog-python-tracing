@@ -5,51 +5,7 @@
 # Copyright 2022 Datadog, Inc.
 from notes_app.notes_logic import NotesLogic
 from flask import Flask, request
-
-
-# tracing
-from ddtrace import patch_all
-patch_all()
-
-# logging imports BEFORE calling _setup_logging()
-import os, sys
-import logging
-from pythonjsonlogger import jsonlogger
-
-
-def _setup_logging():
-    root = logging.getLogger()
-    root.setLevel(logging.INFO)
-
-    h = logging.StreamHandler(sys.stdout)
-    fmt = '%(asctime)s %(levelname)s %(name)s %(message)s %(dd.trace_id)s %(dd.span_id)s service=%(service)s env=%(env)s version=%(version)s'
-    h.setFormatter(jsonlogger.JsonFormatter(fmt))
-
-    class _SvcFilter(logging.Filter):
-        def filter(self, record):
-            record.service = os.getenv("DD_SERVICE", "notes-app")
-            record.env = os.getenv("DD_ENV", "dev")
-            record.version = os.getenv("DD_VERSION", "1.0.0")
-            return True
-    h.addFilter(_SvcFilter())
-
-    root.handlers = [h]
-
-    w = logging.getLogger("werkzeug")
-    w.setLevel(logging.INFO)
-    w.handlers = [h]
-    w.propagate = False
-
-
-# ✅ only call after imports are in place
-_setup_logging()
-
-
-
-
-
-
-
+from ddtrace import tracer
 
 app = Flask(__name__)
 

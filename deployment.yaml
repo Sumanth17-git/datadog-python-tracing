@@ -1,0 +1,94 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: notes
+  labels:
+    app: notes
+    # Unified service tags
+    tags.datadoghq.com/env: dev
+    tags.datadoghq.com/service: notes
+    tags.datadoghq.com/version: "0.1.0"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: notes
+  template:
+    metadata:
+      labels:
+        app: notes
+        tags.datadoghq.com/env: dev
+        tags.datadoghq.com/service: notes
+        tags.datadoghq.com/version: "0.1.0"
+        admission.datadoghq.com/enabled: "true"
+      annotations:
+        # Auto-instrument Python
+        admission.datadoghq.com/python-lib.version: v2.3.1
+        admission.datadoghq.com/config.mode: "hostip"
+        # Log collection mapping
+        ad.datadoghq.com/notes.logs: >-
+          [{"source":"python","service":"notes","auto_multi_line_detection": true}]
+    spec:
+      containers:
+        - name: notes
+          image: sumanth17121988/notes:v2
+          ports:
+            - containerPort: 8080
+          env:
+            # Unified Service Tags (auto-populated from pod labels)
+            - name: DD_ENV
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.labels['tags.datadoghq.com/env']
+            - name: DD_SERVICE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.labels['tags.datadoghq.com/service']
+            - name: DD_VERSION
+              valueFrom:
+                  fieldRef:
+                    fieldPath: metadata.labels['tags.datadoghq.com/version']
+            # Datadog Agent host (uses node's IP)
+            - name: DD_AGENT_HOST
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.hostIP
+            # Enable instrumentation features
+            - name: DD_LOGS_INJECTION
+              value: "true"
+            - name: DD_PROFILING_ENABLED
+              value: "true"
+            - name: DD_RUNTIME_METRICS_ENABLED
+              value: "true"
+            - name: DD_TRACE_SAMPLE_RATE
+              value: "1"
+            - name: DD_TRACE_STARTUP_LOGS
+              value: "true"
+            - name: DD_DYNAMIC_INSTRUMENTATION_ENABLED
+              value: "true"
+            - name: DD_APPSEC_ENABLED
+              value: "true"
+            - name: DD_IAST_ENABLED
+              value: "true"
+            - name: DD_APPSEC_SCA_ENABLED
+              value: "true"
+            - name: DD_TAGS
+              value: "app-name:news,team:devops"
+            - name: DD_TRACE_AGENT_URL
+              value: "http://$(DD_AGENT_HOST):8126"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: notes-service
+  labels:
+    app: notes
+spec:
+  type: LoadBalancer
+  selector:
+    app: notes
+  ports:
+    - protocol: TCP
+      port: 8080        # external port
+      targetPort: 8080 # app listens here
+
